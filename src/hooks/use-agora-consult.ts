@@ -33,6 +33,7 @@ export interface ConsultCredentials {
   role: ConsultRole;
   expiresAt: number;
   sessionId: string;
+  patientId: string | null;
   capabilities: ConsultCapabilities;
   phi: { posture: string; reason: string };
 }
@@ -53,11 +54,6 @@ interface UseAgoraConsultOptions {
   displayName: string;
 }
 
-/**
- * Reserved bot uids, mirrored from `src/lib/agora/token.ts`. The UI hides them
- * from the participant grid — a caption bot rendered as an empty video tile
- * looks like a broken participant.
- */
 const BOT_UIDS = new Set([1_000_001, 1_000_002, 1_000_003]);
 
 export function useAgoraConsult(options: UseAgoraConsultOptions) {
@@ -75,12 +71,9 @@ export function useAgoraConsult(options: UseAgoraConsultOptions) {
   const camTrackRef = useRef<ICameraVideoTrack | null>(null);
   const localContainer = useRef<HTMLDivElement | null>(null);
   const remoteContainers = useRef(new Map<string, HTMLDivElement>());
+  const credentialsRef = useRef<ConsultCredentials | null>(null);
+  const joinGeneration = useRef(0);
 
-  /**
-   * Callback refs rather than exposed ref objects: the consumer never touches
-   * `.current` during render, and a container that mounts *after* the track
-   * exists still gets the video attached.
-   */
   const registerLocalContainer = useCallback((element: HTMLDivElement | null) => {
     localContainer.current = element;
     if (element && camTrackRef.current) camTrackRef.current.play(element);
@@ -103,7 +96,6 @@ export function useAgoraConsult(options: UseAgoraConsultOptions) {
       const key = String(uid);
       if (element) {
         remoteContainers.current.set(key, element);
-        // Replay in case the tile mounted after the publish event arrived.
         const user = clientRef.current?.remoteUsers.find((u) => String(u.uid) === key);
         user?.videoTrack?.play(element);
       } else {
@@ -113,14 +105,19 @@ export function useAgoraConsult(options: UseAgoraConsultOptions) {
     [],
   );
 
-  const leave = useCallback(async () => {
-    const client = clientRef.current;
+  const closeTracks = useCallback(() => {
     micTrackRef.current?.stop();
     micTrackRef.current?.close();
     camTrackRef.current?.stop();
     camTrackRef.current?.close();
     micTrackRef.current = null;
     camTrackRef.current = null;
+  }, []);
+
+  const leave = useCallback(async () => {
+    joinGeneration.current += 1;
+    const client = clientRef.current;
+    closeTracks();
 
     if (client) {
       try {
@@ -131,13 +128,20 @@ export function useAgoraConsult(options: UseAgoraConsultOptions) {
       client.removeAllListeners();
     }
     clientRef.current = null;
+    credentialsRef.current = null;
+    setCredentials(null);
     setRemotes([]);
+    setMicOn(true);
+    setCameraOn(true);
     setStatus("idle");
-  }, []);
+  }, [closeTracks]);
 
   const join = useCallback(async () => {
+    const generation = ++joinGeneration.current;
     setStatus("joining");
     setError(null);
+
+    const stale = () => joinGeneration.current !== generation;
 
     try {
       const response = await fetch("/api/consult/token", {
@@ -151,12 +155,14 @@ export function useAgoraConsult(options: UseAgoraConsultOptions) {
 
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "Could not start the consult");
+      if (stale()) return;
 
       const creds = payload as ConsultCredentials;
+      credentialsRef.current = creds;
       setCredentials(creds);
 
       const AgoraRTC = (await import("agora-rtc-sdk-ng")).default;
-      // Only surface real problems; the SDK is chatty at info level.
+      if (stale()) return;
       AgoraRTC.setLogLevel(2);
 
       const client = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
@@ -177,8 +183,9 @@ export function useAgoraConsult(options: UseAgoraConsultOptions) {
       client.on("user-unpublished", () => syncRemotes(client));
       client.on("user-left", () => syncRemotes(client));
 
-      // The token carries its own expiry; renew before Agora drops the call.
       client.on("token-privilege-will-expire", async () => {
+        const current = credentialsRef.current;
+        if (!current) return;
         try {
           const renew = await fetch("/api/consult/token", {
             method: "POST",
@@ -186,34 +193,62 @@ export function useAgoraConsult(options: UseAgoraConsultOptions) {
               "Content-Type": "application/json",
               Authorization: `Bearer ${apiToken}`,
             },
-            body: JSON.stringify({ patientId, role, displayName }),
+            body: JSON.stringify({
+              sessionId: current.sessionId,
+              uid: current.uid,
+              role: current.role,
+              displayName,
+            }),
           });
           const fresh = (await renew.json()) as ConsultCredentials;
-          if (renew.ok) await client.renewToken(fresh.token);
+          if (renew.ok) {
+            credentialsRef.current = { ...current, token: fresh.token, expiresAt: fresh.expiresAt };
+            await client.renewToken(fresh.token);
+          }
         } catch {
-          // Nothing useful to do here; the call will end at expiry.
+          // The call will end at expiry.
         }
       });
 
       await client.join(creds.appId, creds.channel, creds.token, creds.uid);
+      if (stale()) {
+        await client.leave();
+        client.removeAllListeners();
+        return;
+      }
 
-      // Observers subscribe only — the token would reject a publish anyway.
       if (creds.role !== "observer") {
         const [mic, cam] = await AgoraRTC.createMicrophoneAndCameraTracks();
+        if (stale()) {
+          mic.stop();
+          mic.close();
+          cam.stop();
+          cam.close();
+          await client.leave();
+          client.removeAllListeners();
+          return;
+        }
         micTrackRef.current = mic;
         camTrackRef.current = cam;
         if (localContainer.current) cam.play(localContainer.current);
         await client.publish([mic, cam]);
+        if (stale()) {
+          closeTracks();
+          await client.leave();
+          client.removeAllListeners();
+          return;
+        }
       }
 
       syncRemotes(client);
       setStatus("connected");
     } catch (err) {
+      if (stale()) return;
       setError(err instanceof Error ? err.message : "Failed to join the consult");
       setStatus("error");
       await leave();
     }
-  }, [apiToken, patientId, role, displayName, syncRemotes, leave]);
+  }, [apiToken, patientId, role, displayName, syncRemotes, leave, closeTracks]);
 
   const toggleMic = useCallback(async () => {
     const track = micTrackRef.current;
@@ -231,7 +266,6 @@ export function useAgoraConsult(options: UseAgoraConsultOptions) {
     setCameraOn(next);
   }, [cameraOn]);
 
-  // Release the mic/camera if the component unmounts mid-call.
   useEffect(() => {
     return () => {
       void leave();

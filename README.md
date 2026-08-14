@@ -166,15 +166,18 @@ Two additions close that gap, both built on [Agora](https://console.agora.io/):
   never-diagnose safety rules.
 - **A clinician you can escalate to.** When the AI has gone as far as it safely
   can, `ConsultRoom` puts the patient and a real clinician on live video, with
-  optional live captions and a recorded visit record.
+  optional recording to object storage. Live caption *controls* exist; on-screen
+  caption rendering is not wired yet.
 
 **PHI is gated in code.** Sending identifiable patient data to Agora requires a
 signed Business Associate Agreement, which is an enterprise arrangement — the
 free console tier does not include one. So the default posture is
 `transport-only`: consults and the voice navigator work, but no patient chart
-reaches the model and nothing is recorded. Recording, stored transcripts, and
-chart-aware prompting stay locked until an operator sets both
-`AGORA_PHI_POSTURE=baa-signed` and `AGORA_BAA_REFERENCE=<contract ref>`.
+reaches the model and nothing is recorded. Recording and stored transcripts
+stay locked until an operator sets both `AGORA_PHI_POSTURE=baa-signed` and
+`AGORA_BAA_REFERENCE=<contract ref>`. Chart-aware prompting additionally
+requires `HEALTHGUARD_LLM_PHI_POSTURE=attested` — an Agora BAA does not cover
+the LLM hop.
 
 Full architecture, posture matrix, and setup: [docs/agora-telehealth.md](docs/agora-telehealth.md).
 

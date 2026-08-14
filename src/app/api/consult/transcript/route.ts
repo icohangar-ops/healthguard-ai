@@ -5,13 +5,14 @@
  * DELETE /api/consult/transcript  { sessionId }
  *
  * Live captions run under any posture — they are an accessibility feature and
- * nothing is stored. `persist: true` (durable transcript in the visit record)
- * is BAA-gated.
+ * nothing is stored. `persist: true` (durable transcript in object storage)
+ * is BAA-gated. Caption *rendering* in the UI is not wired yet.
  */
 import { NextResponse } from "next/server";
 
-import { PhiPostureError, capabilities, missingEnv } from "@/lib/agora/config";
-import { getSession, updateSession } from "@/lib/agora/session";
+import { capabilities, missingEnv } from "@/lib/agora/config";
+import { consultErrorResponse } from "@/lib/agora/rest";
+import { getSession, releaseSlot, reserveSlot, updateSession } from "@/lib/agora/session";
 import { startTranscription, stopTranscription } from "@/lib/agora/transcription";
 import { requirePatientAuth } from "@/lib/require-patient-auth";
 
@@ -38,13 +39,24 @@ export async function POST(request: Request) {
   if (!session) {
     return NextResponse.json({ error: "Unknown or expired session" }, { status: 404 });
   }
-  if (session.transcriptionAgentId) {
+
+  const requested = Array.isArray(body.languages)
+    ? body.languages.filter((l): l is string => typeof l === "string" && l.trim() !== "")
+    : [];
+  if (Array.isArray(body.languages) && requested.length === 0) {
+    return NextResponse.json(
+      { error: "languages must contain 1-4 non-empty language tags" },
+      { status: 400 },
+    );
+  }
+  if (requested.length > 4) {
+    return NextResponse.json({ error: "languages accepts at most 4 tags" }, { status: 400 });
+  }
+  const languages = requested.length > 0 ? requested : ["en-US"];
+
+  if (!reserveSlot(session.sessionId, "transcriptionAgentId")) {
     return NextResponse.json({ error: "Captions already running" }, { status: 409 });
   }
-
-  const languages = Array.isArray(body.languages)
-    ? body.languages.filter((l): l is string => typeof l === "string")
-    : ["en-US"];
 
   try {
     const task = await startTranscription({
@@ -63,13 +75,8 @@ export async function POST(request: Request) {
       captionsOnly: !capabilities().storedTranscript,
     });
   } catch (error) {
-    if (error instanceof PhiPostureError) {
-      return NextResponse.json({ error: error.message }, { status: 403 });
-    }
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to start captions" },
-      { status: 502 },
-    );
+    releaseSlot(session.sessionId, "transcriptionAgentId");
+    return consultErrorResponse(error, "Failed to start captions");
   }
 }
 
@@ -89,7 +96,7 @@ export async function DELETE(request: Request) {
   if (!session) {
     return NextResponse.json({ error: "Unknown or expired session" }, { status: 404 });
   }
-  if (!session.transcriptionAgentId) {
+  if (!session.transcriptionAgentId || session.transcriptionAgentId === "pending") {
     return NextResponse.json({ stopped: false, reason: "captions not running" });
   }
 
@@ -98,9 +105,6 @@ export async function DELETE(request: Request) {
     updateSession(session.sessionId, { transcriptionAgentId: undefined });
     return NextResponse.json({ stopped: true });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to stop captions" },
-      { status: 502 },
-    );
+    return consultErrorResponse(error, "Failed to stop captions");
   }
 }

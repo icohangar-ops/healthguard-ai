@@ -35,6 +35,12 @@ export interface AgoraConfig {
   readonly posture: PhiPosture;
   /** Operator-supplied reference for the executed BAA (contract id, ticket, URI). */
   readonly baaReference: string | null;
+  /**
+   * Separate from the Agora BAA: the operator has attested that the *LLM
+   * provider* (today: z-ai-web-dev-sdk / Gemini) may receive PHI. An Agora
+   * BAA does not cover that hop.
+   */
+  readonly llmPhiAttested: boolean;
 }
 
 export interface AgoraCapabilities {
@@ -92,6 +98,15 @@ export function resolvePosture(): { posture: PhiPosture; reason: string } {
   return { posture: "baa-signed", reason: `BAA on file: ${reference}` };
 }
 
+/**
+ * Chart-aware prompting talks to the LLM, not to Agora. Fail closed unless
+ * the operator has separately attested that hop. `true`/`yes`/`baa-signed`
+ * do not count — same deliberate-typing rule as the Agora posture.
+ */
+export function llmPhiAttested(): boolean {
+  return env("HEALTHGUARD_LLM_PHI_POSTURE").toLowerCase() === "attested";
+}
+
 export function getAgoraConfig(): AgoraConfig {
   const { posture } = resolvePosture();
   return {
@@ -101,6 +116,7 @@ export function getAgoraConfig(): AgoraConfig {
     restSecret: env("AGORA_REST_SECRET"),
     posture,
     baaReference: env("AGORA_BAA_REFERENCE") || null,
+    llmPhiAttested: llmPhiAttested(),
   };
 }
 
@@ -129,7 +145,8 @@ export function capabilities(config = getAgoraConfig()): AgoraCapabilities {
   return {
     consult: transportReady,
     voiceNavigator: restReady,
-    phiInPrompt: restReady && baa,
+    // Two vendors, two attestations. An Agora-only BAA must not inject the chart.
+    phiInPrompt: restReady && baa && config.llmPhiAttested,
     recording: restReady && baa,
     storedTranscript: restReady && baa,
   };
@@ -159,9 +176,10 @@ export class PhiPostureError extends Error {
 /** Assert a PHI-bearing feature is permitted, or throw {@link PhiPostureError}. */
 export function assertPhiAllowed(
   feature: "phiInPrompt" | "recording" | "storedTranscript",
-  caps = capabilities(),
+  config = getAgoraConfig(),
 ): void {
+  const caps = capabilities(config);
   if (!caps[feature]) {
-    throw new PhiPostureError(feature, getAgoraConfig().posture);
+    throw new PhiPostureError(feature, config.posture);
   }
 }

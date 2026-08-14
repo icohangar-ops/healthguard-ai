@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   BOT_UIDS,
@@ -53,23 +53,30 @@ describe("consultChannel", () => {
 });
 
 describe("humanUid", () => {
-  it("is deterministic for the same seed", () => {
-    expect(humanUid("consult-1:patient:Ada")).toBe(humanUid("consult-1:patient:Ada"));
+  it("is deterministic for the same seed and entropy", () => {
+    expect(humanUid("consult-1:patient:Ada", "e1")).toBe(humanUid("consult-1:patient:Ada", "e1"));
+  });
+
+  it("differs when entropy differs, so two Adas in one room do not collide", () => {
+    expect(humanUid("consult-1:patient:Ada", "e1")).not.toBe(
+      humanUid("consult-1:patient:Ada", "e2"),
+    );
   });
 
   it("never collides with the reserved bot range", () => {
     const seeds = Array.from({ length: 500 }, (_, i) => `consult-${i}:patient:user${i}`);
     for (const seed of seeds) {
-      const uid = humanUid(seed);
+      const uid = humanUid(seed, String(seed.length));
       expect(uid).toBeGreaterThanOrEqual(BOT_UID_CEILING);
       expect(Object.values(BOT_UIDS)).not.toContain(uid);
     }
   });
 
   it("produces a valid 32-bit unsigned uid", () => {
-    const uid = humanUid("anything");
+    const uid = humanUid("anything", "entropy");
     expect(Number.isInteger(uid)).toBe(true);
     expect(uid).toBeLessThanOrEqual(0xffffffff);
+    expect(uid).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -83,9 +90,18 @@ describe("mintRtcToken", () => {
   });
 
   it("mints a distinct token for the subscriber role", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2025-01-01T00:00:00Z"));
     const publisher = mintRtcToken({ channel: "consult-x", uid: 42, role: "clinician" });
     const observer = mintRtcToken({ channel: "consult-x", uid: 42, role: "observer" });
     expect(publisher.token).not.toBe(observer.token);
+    vi.useRealTimers();
+  });
+
+  it("rejects wildcard uid 0", () => {
+    expect(() =>
+      mintRtcToken({ channel: "consult-x", uid: 0, role: "patient" }),
+    ).toThrow(/invalid Agora uid/);
   });
 
   it("rejects an invalid channel name", () => {

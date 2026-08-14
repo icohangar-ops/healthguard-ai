@@ -34,7 +34,7 @@ So the gate is code, not a note in a README. `src/lib/agora/config.ts` resolves
 a **posture** from the environment and every PHI-bearing path asserts against
 it:
 
-```
+```text
 AGORA_PHI_POSTURE=baa-signed
 AGORA_BAA_REFERENCE=<your executed contract reference>
 ```
@@ -45,20 +45,22 @@ has to be able to name it.
 
 ### What each posture allows
 
-| | `transport-only` (default) | `baa-signed` |
-|---|---|---|
-| Video/voice consult | yes | yes |
-| Voice navigator runs | yes | yes |
-| Patient record in navigator prompt | **no** | yes |
-| Cloud recording | **no** | yes |
-| Stored transcript | **no** | yes |
-| Live captions (transient) | yes | yes |
+| | `transport-only` (default) | `baa-signed` | `baa-signed` + `HEALTHGUARD_LLM_PHI_POSTURE=attested` |
+|---|---|---|---|
+| Video/voice consult | yes | yes | yes |
+| Voice navigator runs | yes | yes | yes |
+| Patient record in navigator prompt | **no** | **no** | yes |
+| Cloud recording | **no** | yes | yes |
+| Stored transcript | **no** | yes | yes |
+| Live captions (transient) | yes | yes | yes |
 
 The default is deliberately *useful*, not crippled. An un-personalised
 navigator that says "tell me what's going on" and routes chest pain to
 emergency services is most of the value, and carries no PHI we put there.
 What transport-only forbids is us seeding the model with a patient's chart and
-us asking Agora to store the audio.
+us asking Agora to store the audio. Chart-aware prompting also needs a separate
+attestation for the LLM hop (`HEALTHGUARD_LLM_PHI_POSTURE=attested`) — an Agora
+BAA does not cover Gemini / `z-ai-web-dev-sdk`.
 
 Misconfiguration degrades rather than crashes: a typo in `AGORA_PHI_POSTURE`
 takes the *PHI* features offline, never the consult itself. Taking video
@@ -70,7 +72,7 @@ consults down because of an env typo would be its own kind of harm.
 
 The interesting decision: Agora does **not** get its own model.
 
-```
+```text
 patient speech
    ↓  Agora ASR
 Conversational AI Engine
@@ -106,7 +108,15 @@ unset means the bridge rejects everything.
 
 ## API surface
 
-All routes sit behind the existing `requirePatientAuth` bearer guard.
+Patient-facing consult routes sit behind the existing `requirePatientAuth`
+bearer guard (`PATIENT_API_TOKEN`). That token is a **service credential**, the
+same one `/api/patients` and `/api/chat` already use — it authenticates the
+caller as this deployment, not as a specific patient or clinician. There is no
+per-user session layer to bind a channel to.
+
+The LLM callback is the exception: Agora authenticates with
+`AGORA_LLM_BRIDGE_KEY`, compared in constant time. Unset means the bridge
+rejects everything.
 
 | Route | Method | Purpose |
 |---|---|---|
@@ -138,8 +148,20 @@ rejects anything that could smuggle a path segment.
 
 **Sessions are in-memory and deliberately not persisted.** A consult is minutes
 long; not writing the patient↔channel mapping to disk means a stolen database
-file does not reveal who was on which call. Multi-instance deployments should
-back `src/lib/agora/session.ts` with Redis on the same keys.
+file does not reveal who was on which call. This is a **single-instance** store.
+A second replica will 404 follow-up navigator/transcript/record calls, and a
+process restart mid-consult leaves Agora agents running until their idle
+timeout (60s navigator, 120s STT/recording). Do not put this behind more than
+one replica without sticky routing on `sessionId` or a shared store. Redis is
+the planned follow-up; it is not in this PR.
+
+**Human uids include per-join entropy** so two people with the same display
+name in the same role do not kick each other off the channel. Token renewal
+sends the existing `sessionId` and `uid` so it cannot open a new room.
+
+**Agora POSTs are not retried.** `acquire` / `join` / `start` are not
+idempotent; a retry would orphan a second agent. `safeFetch` is called with
+`maxAttempts: 1`.
 
 **Recording uses `individual` mode.** Separate per-participant tracks beat a
 composited grid for a clinical record: easier to review, and a per-speaker
@@ -160,9 +182,10 @@ this table is the canonical reference.
 | `AGORA_APP_CERTIFICATE` | consults | Enable the certificate on the project first |
 | `AGORA_REST_KEY` | navigator, captions, recording | RESTful API customer ID |
 | `AGORA_REST_SECRET` | navigator, captions, recording | RESTful API secret |
-| `AGORA_PHI_POSTURE` | PHI features | `baa-signed` unlocks; anything else is transport-only |
-| `AGORA_BAA_REFERENCE` | PHI features | Your executed contract reference. Required alongside the posture |
-| `HEALTHGUARD_PUBLIC_URL` | navigator | Internet-reachable origin Agora calls back into |
+| `AGORA_PHI_POSTURE` | PHI features | `baa-signed` unlocks recording/stored transcripts; anything else is transport-only |
+| `AGORA_BAA_REFERENCE` | PHI features | Your executed Agora contract reference. Required alongside the posture |
+| `HEALTHGUARD_LLM_PHI_POSTURE` | chart in navigator prompt | `attested` required in addition to the Agora BAA. An Agora BAA does not cover the LLM |
+| `HEALTHGUARD_PUBLIC_URL` | navigator | Absolute `https` origin Agora calls back into |
 | `AGORA_LLM_BRIDGE_KEY` | navigator | Shared secret for the LLM callback. Unset = reject everything |
 | `AGORA_ASR_VENDOR` | navigator | Defaults to `ares` |
 | `AGORA_TTS_VENDOR` | navigator | Your chosen TTS provider |
@@ -179,12 +202,18 @@ this table is the canonical reference.
 1. Create a project in the [Agora console](https://console.agora.io/), enable
    the App Certificate, and copy the App ID + certificate.
 2. Generate a RESTful API customer ID/secret for the server-side features.
-3. Fill in `.env` from `.env.example`. Start with transport-only.
+3. Set the transport variables from the table above. Start with transport-only.
 4. Configure `AGORA_TTS_VENDOR` / `AGORA_TTS_PARAMS` for your chosen TTS
    provider; params are passed to Agora verbatim.
-5. Expose the app at `HEALTHGUARD_PUBLIC_URL` and set `AGORA_LLM_BRIDGE_KEY`.
+5. Expose the app at `HEALTHGUARD_PUBLIC_URL` (must be `https`) and set
+   `AGORA_LLM_BRIDGE_KEY`.
 6. Only after a BAA is executed: set `AGORA_PHI_POSTURE` and
-   `AGORA_BAA_REFERENCE`, plus the `AGORA_STORAGE_*` bucket.
+   `AGORA_BAA_REFERENCE`, plus `AGORA_STORAGE_VENDOR`, `AGORA_STORAGE_REGION`,
+   `AGORA_STORAGE_BUCKET`, `AGORA_STORAGE_ACCESS_KEY`, and
+   `AGORA_STORAGE_SECRET_KEY`.
+7. Chart-aware voice prompting additionally requires
+   `HEALTHGUARD_LLM_PHI_POSTURE=attested` for the LLM provider. Do not set this
+   because you signed an Agora BAA.
 
 ## Not done
 

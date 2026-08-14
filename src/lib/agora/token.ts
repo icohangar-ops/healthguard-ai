@@ -7,6 +7,8 @@
  *   - privilegeExpire: when the join/publish privilege inside it dies
  * We set both to the same horizon; a consult that outlives it renews.
  */
+import { randomUUID } from "node:crypto";
+
 import { RtcRole, RtcTokenBuilder } from "agora-token";
 
 import { getAgoraConfig } from "./config";
@@ -67,7 +69,7 @@ export function mintRtcToken(options: {
   if (!isValidChannelName(channel)) {
     throw new Error(`invalid Agora channel name: "${channel}"`);
   }
-  if (!Number.isInteger(uid) || uid < 0 || uid > 0xffffffff) {
+  if (!Number.isInteger(uid) || uid < 1 || uid > 0xffffffff) {
     throw new Error(`invalid Agora uid: ${uid}`);
   }
 
@@ -109,11 +111,18 @@ export const BOT_UIDS = {
 
 export const BOT_UID_CEILING = 1_000_100;
 
-/** Deterministic, collision-free-enough uid for a human participant. */
-export function humanUid(seed: string): number {
+/**
+ * Collision-resistant uid for a human participant.
+ *
+ * `entropy` defaults to a fresh UUID so two people who pick the same display
+ * name in the same role do not kick each other out of the channel. Pass a
+ * fixed value only in tests.
+ */
+export function humanUid(seed: string, entropy: string = randomUUID()): number {
   let hash = 2166136261;
-  for (let i = 0; i < seed.length; i += 1) {
-    hash ^= seed.charCodeAt(i);
+  const input = `${seed}:${entropy}`;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
     hash = Math.imul(hash, 16777619);
   }
   // Keep clear of the reserved bot range.

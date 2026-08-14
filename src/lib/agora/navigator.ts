@@ -14,7 +14,7 @@
  *      POST .../agents/{agentId}/leave
  */
 import { capabilities, getAgoraConfig } from "./config";
-import { agoraPost } from "./rest";
+import { agoraPost, isAlreadyGone } from "./rest";
 import { BOT_UIDS } from "./token";
 
 export interface StartNavigatorOptions {
@@ -70,8 +70,31 @@ function requiredEnv(name: string): string {
  * rather than an inferred request host, to avoid a Host-header rebind
  * pointing Agora's callback somewhere else.
  */
+function ttsParams(): Record<string, unknown> {
+  const raw = requiredEnv("AGORA_TTS_PARAMS");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("AGORA_TTS_PARAMS must be a JSON object");
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("AGORA_TTS_PARAMS must be a JSON object");
+  }
+  return parsed as Record<string, unknown>;
+}
+
 function llmBridgeUrl(): string {
   const base = requiredEnv("HEALTHGUARD_PUBLIC_URL").replace(/\/+$/, "");
+  let url: URL;
+  try {
+    url = new URL(base);
+  } catch {
+    throw new Error("HEALTHGUARD_PUBLIC_URL must be an absolute URL");
+  }
+  if (url.protocol !== "https:") {
+    throw new Error("HEALTHGUARD_PUBLIC_URL must be https (Agora calls this from the internet)");
+  }
   return `${base}/api/consult/navigator/llm/chat/completions`;
 }
 
@@ -119,7 +142,7 @@ export async function startNavigator(
       },
       tts: {
         vendor: requiredEnv("AGORA_TTS_VENDOR"),
-        params: JSON.parse(requiredEnv("AGORA_TTS_PARAMS")) as Record<string, unknown>,
+        params: ttsParams(),
       },
     },
   };
@@ -140,9 +163,13 @@ export async function startNavigator(
 
 export async function stopNavigator(agentId: string): Promise<void> {
   const { appId } = getAgoraConfig();
-  await agoraPost<Record<string, never>>(
-    `/api/conversational-ai-agent/v2/projects/${appId}/agents/${encodeURIComponent(agentId)}/leave`,
-    {},
-    "conversational-ai leave",
-  );
+  try {
+    await agoraPost<Record<string, never>>(
+      `/api/conversational-ai-agent/v2/projects/${appId}/agents/${encodeURIComponent(agentId)}/leave`,
+      {},
+      "conversational-ai leave",
+    );
+  } catch (error) {
+    if (!isAlreadyGone(error)) throw error;
+  }
 }

@@ -1,17 +1,18 @@
 /**
- * Start / stop the recorded visit record.
+ * Start / stop the recorded consult.
  *
  * POST   /api/consult/record  { sessionId }
  * DELETE /api/consult/record  { sessionId }
  *
- * Both paths refuse under transport-only posture: a recorded consult is PHI
- * at rest with a third party, which is the exact thing a BAA governs.
+ * Only POST refuses under transport-only posture. DELETE stays open so an
+ * active recording can always be stopped after a posture change.
  */
 import { NextResponse } from "next/server";
 
-import { PhiPostureError, missingEnv } from "@/lib/agora/config";
+import { missingEnv } from "@/lib/agora/config";
 import { startRecording, stopRecording } from "@/lib/agora/recording";
-import { getSession, updateSession } from "@/lib/agora/session";
+import { consultErrorResponse } from "@/lib/agora/rest";
+import { getSession, releaseSlot, reserveSlot, updateSession } from "@/lib/agora/session";
 import { BOT_UIDS, mintRtcToken } from "@/lib/agora/token";
 import { requirePatientAuth } from "@/lib/require-patient-auth";
 
@@ -32,10 +33,7 @@ async function resolve(request: Request) {
   return { session };
 }
 
-export async function POST(request: Request) {
-  const unauthorized = requirePatientAuth(request);
-  if (unauthorized) return unauthorized;
-
+function restConfigError(): NextResponse | null {
   const missing = missingEnv(true);
   if (missing.length > 0) {
     return NextResponse.json(
@@ -43,12 +41,21 @@ export async function POST(request: Request) {
       { status: 503 },
     );
   }
+  return null;
+}
+
+export async function POST(request: Request) {
+  const unauthorized = requirePatientAuth(request);
+  if (unauthorized) return unauthorized;
+
+  const misconfigured = restConfigError();
+  if (misconfigured) return misconfigured;
 
   const resolved = await resolve(request);
   if ("error" in resolved) return resolved.error;
   const { session } = resolved;
 
-  if (session.recording) {
+  if (!reserveSlot(session.sessionId, "recording")) {
     return NextResponse.json({ error: "Already recording" }, { status: 409 });
   }
 
@@ -71,13 +78,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ recording: true, sid: handle.sid });
   } catch (error) {
-    if (error instanceof PhiPostureError) {
-      return NextResponse.json({ error: error.message }, { status: 403 });
-    }
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to start recording" },
-      { status: 502 },
-    );
+    releaseSlot(session.sessionId, "recording");
+    return consultErrorResponse(error, "Failed to start recording");
   }
 }
 
@@ -85,11 +87,14 @@ export async function DELETE(request: Request) {
   const unauthorized = requirePatientAuth(request);
   if (unauthorized) return unauthorized;
 
+  const misconfigured = restConfigError();
+  if (misconfigured) return misconfigured;
+
   const resolved = await resolve(request);
   if ("error" in resolved) return resolved.error;
   const { session } = resolved;
 
-  if (!session.recording) {
+  if (!session.recording || session.recording.sid === "") {
     return NextResponse.json({ recording: false, reason: "not recording" });
   }
 
@@ -102,9 +107,6 @@ export async function DELETE(request: Request) {
     updateSession(session.sessionId, { recording: undefined });
     return NextResponse.json({ recording: false, files });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to stop recording" },
-      { status: 502 },
-    );
+    return consultErrorResponse(error, "Failed to stop recording");
   }
 }

@@ -7,8 +7,10 @@
  * This endpoint is the PHI gate's teeth. Agora only ever sends us an opaque
  * session id (planted as a system message when the agent was created). We
  * resolve it to a patient locally, and inject that record into the prompt
- * ONLY when a BAA is on file. Under transport-only posture the navigator is
- * still fully useful — it just does not know who it is talking to.
+ * ONLY when both an Agora BAA *and* HEALTHGUARD_LLM_PHI_POSTURE=attested are
+ * set. An Agora BAA does not authorize the LLM provider. Under transport-only
+ * the navigator is still fully useful — it just does not know who it is
+ * talking to.
  *
  * POST /api/consult/navigator/llm/chat/completions
  * Auth: Bearer AGORA_LLM_BRIDGE_KEY
@@ -35,6 +37,9 @@ const SESSION_PREFIX = "healthguard-session:";
  */
 const MAX_TOKENS = 220;
 const TURN_TIMEOUT_MS = 12_000;
+/** Agora's max_history is 16; keep the bridge at the same bound. */
+const MAX_TURNS = 16;
+const MAX_TURN_CHARS = 4_000;
 
 interface OpenAiRequest {
   messages?: Array<{ role: string; content: string }>;
@@ -71,6 +76,21 @@ function extractSessionId(messages: Array<{ role: string; content: string }>): s
     if (value) return value;
   }
   return null;
+}
+
+function boundTurns(
+  turns: Array<{ role: string; content: string }>,
+): Array<{ role: string; content: string }> {
+  const recent = turns.slice(-MAX_TURNS);
+  let remaining = MAX_TURN_CHARS;
+  const kept: Array<{ role: string; content: string }> = [];
+  for (let i = recent.length - 1; i >= 0; i -= 1) {
+    const turn = recent[i];
+    if (turn.content.length > remaining) break;
+    remaining -= turn.content.length;
+    kept.unshift(turn);
+  }
+  return kept;
 }
 
 /**
@@ -182,9 +202,10 @@ export async function POST(request: Request) {
   const incoming = Array.isArray(body.messages) ? body.messages : [];
   const model = body.model ?? "healthguard-navigator";
 
-  // Everything except the session marker is real conversation.
-  const turns = incoming.filter(
-    (m) => m.role !== "system" && typeof m.content === "string" && m.content !== "",
+  const turns = boundTurns(
+    incoming.filter(
+      (m) => m.role !== "system" && typeof m.content === "string" && m.content !== "",
+    ),
   );
 
   let context: string | null = null;
@@ -196,15 +217,16 @@ export async function POST(request: Request) {
       try {
         context = await patientContextFor(session.patientId);
       } catch {
-        // A record lookup failure must not take the call down; the navigator
-        // simply proceeds without context.
         context = null;
       }
     }
   }
 
   const messages: ChatMessage[] = [
-    { role: "system", content: withPatientContext(VOICE_SYSTEM_PROMPT, context ?? undefined) },
+    {
+      role: "system",
+      content: withPatientContext(VOICE_SYSTEM_PROMPT, context ?? undefined, "plain"),
+    },
     ...turns.map((m) => ({ role: m.role as ChatMessage["role"], content: m.content })),
   ];
 

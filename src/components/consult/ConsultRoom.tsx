@@ -71,6 +71,7 @@ export function ConsultRoom({ apiToken, role, displayName, patientId }: ConsultR
   const caps = credentials?.capabilities;
   const sessionId = credentials?.sessionId;
   const connected = status === "connected";
+  const hasPatientRecord = Boolean(credentials?.patientId);
 
   const call = useCallback(
     async (
@@ -103,6 +104,34 @@ export function ConsultRoom({ apiToken, role, displayName, patientId }: ConsultR
     },
     [apiToken, sessionId],
   );
+
+  const hangUp = useCallback(async () => {
+    if (sessionId) {
+      const stop = async (path: string, on: boolean) => {
+        if (!on) return;
+        try {
+          await fetch(path, {
+            method: "DELETE",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${apiToken}`,
+            },
+            body: JSON.stringify({ sessionId }),
+          });
+        } catch {
+          // Best-effort; Agora idle timeouts are the backstop.
+        }
+      };
+      // Recording first so a dropped call still produces files.
+      await stop("/api/consult/record", recording.on);
+      await stop("/api/consult/navigator", voiceAgent.on);
+      await stop("/api/consult/transcript", captions.on);
+    }
+    setVoiceAgent(IDLE);
+    setCaptions(IDLE);
+    setRecording(IDLE);
+    await leave();
+  }, [apiToken, sessionId, recording.on, voiceAgent.on, captions.on, leave]);
 
   if (status === "idle" || status === "error") {
     return (
@@ -212,7 +241,7 @@ export function ConsultRoom({ apiToken, role, displayName, patientId }: ConsultR
             {cameraOn ? "Stop video" : "Start video"}
           </Button>
 
-          <Button variant="destructive" size="sm" onClick={() => void leave()}>
+          <Button variant="destructive" size="sm" onClick={() => void hangUp()}>
             <PhoneOff className="mr-2 h-4 w-4" />
             Leave
           </Button>
@@ -225,9 +254,9 @@ export function ConsultRoom({ apiToken, role, displayName, patientId }: ConsultR
             icon={<Bot className="h-4 w-4" />}
             label="Voice navigator"
             description={
-              caps?.phiInPrompt
+              caps?.phiInPrompt && hasPatientRecord
                 ? "Speaks with the patient and can see their record."
-                : "Speaks with the patient. No patient record is shared (no BAA on file)."
+                : "Speaks with the patient. No patient record is shared."
             }
             state={voiceAgent}
             available={Boolean(caps?.voiceNavigator) && connected}
@@ -240,14 +269,10 @@ export function ConsultRoom({ apiToken, role, displayName, patientId }: ConsultR
           <FeatureToggle
             icon={<Captions className="h-4 w-4" />}
             label="Live captions"
-            description={
-              caps?.storedTranscript
-                ? "Real-time captions, saved to the visit record."
-                : "Real-time captions. Not saved (no BAA on file)."
-            }
+            description="Caption task lifecycle is implemented; on-screen rendering is not wired yet."
             state={captions}
-            available={Boolean(caps?.voiceNavigator) && connected}
-            unavailableReason="Agora REST credentials are not configured."
+            available={false}
+            unavailableReason="Caption rendering is not wired yet. The transcript task API exists for a later UI."
             onToggle={() =>
               void call("/api/consult/transcript", captions, setCaptions, {
                 persist: Boolean(caps?.storedTranscript),
@@ -258,7 +283,7 @@ export function ConsultRoom({ apiToken, role, displayName, patientId }: ConsultR
           <FeatureToggle
             icon={<Circle className="h-4 w-4" />}
             label="Record visit"
-            description="Records the consult to your object storage as the visit record."
+            description="Stores the consult in configured object storage. Not automatically attached to the patient record."
             state={recording}
             available={Boolean(caps?.recording) && connected}
             unavailableReason="Recording a consult stores PHI with Agora. Requires a signed BAA."

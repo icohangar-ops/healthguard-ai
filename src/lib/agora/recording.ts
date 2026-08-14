@@ -1,9 +1,9 @@
 /**
  * Visit record — Agora Cloud Recording.
  *
- * A recorded consult is unambiguously PHI at rest in a third party, so every
- * entry point here asserts the BAA gate first. There is no "just for the demo"
- * bypass on purpose: the demo path is the one that gets shipped.
+ * A recorded consult is unambiguously PHI at rest in a third party, so
+ * `startRecording` asserts the BAA gate first. `stopRecording` is deliberately
+ * ungated: a posture change mid-call must not strand an active recording.
  *
  * Three-step lifecycle, per Agora's REST contract:
  *   acquire → start → stop
@@ -12,6 +12,7 @@
  */
 import { assertPhiAllowed, getAgoraConfig } from "./config";
 import { agoraPost } from "./rest";
+import { agoraStorageConfig } from "./storage";
 import { BOT_UIDS } from "./token";
 
 export interface StartRecordingOptions {
@@ -42,28 +43,6 @@ interface StopResponse {
 }
 
 const RECORDER_UID = String(BOT_UIDS.recorder);
-
-function storageConfig(): Record<string, unknown> {
-  const required = [
-    "AGORA_STORAGE_VENDOR",
-    "AGORA_STORAGE_REGION",
-    "AGORA_STORAGE_BUCKET",
-    "AGORA_STORAGE_ACCESS_KEY",
-    "AGORA_STORAGE_SECRET_KEY",
-  ];
-  const missing = required.filter((n) => (process.env[n] ?? "").trim() === "");
-  if (missing.length > 0) {
-    throw new Error(`cloud recording needs: ${missing.join(", ")}`);
-  }
-  return {
-    vendor: Number(process.env.AGORA_STORAGE_VENDOR),
-    region: Number(process.env.AGORA_STORAGE_REGION),
-    bucket: process.env.AGORA_STORAGE_BUCKET,
-    accessKey: process.env.AGORA_STORAGE_ACCESS_KEY,
-    secretKey: process.env.AGORA_STORAGE_SECRET_KEY,
-    fileNamePrefix: ["healthguard", "consults"],
-  };
-}
 
 /**
  * Start recording a consult.
@@ -107,7 +86,7 @@ export async function startRecording(
           subscribeUidGroup: 0,
         },
         recordingFileConfig: { avFileType: ["hls", "mp4"] },
-        storageConfig: storageConfig(),
+        storageConfig: agoraStorageConfig(["healthguard", "consults"]),
       },
     },
     "cloud recording start",

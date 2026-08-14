@@ -55,9 +55,19 @@ SPEAKING RULES — these override any formatting instinct:
 
 ${VITALS_REFERENCE}`;
 
-/** Wrap patient context in the same framing both surfaces expect. */
-export function withPatientContext(basePrompt: string, patientContext?: string): string {
+/** Wrap patient context. Voice uses plain text so TTS does not read asterisks. */
+export function withPatientContext(
+  basePrompt: string,
+  patientContext?: string,
+  format: "markdown" | "plain" = "markdown",
+): string {
   if (!patientContext) return basePrompt;
+  if (format === "plain") {
+    return (
+      `${basePrompt}\n\nCurrent patient context:\n${patientContext}\n\n` +
+      "Consider this patient data in your response. Remember to never diagnose."
+    );
+  }
   return (
     `${basePrompt}\n\n---\n**Current Patient Context:**\n${patientContext}\n---\n` +
     "Consider this patient data in your response. Remember to never diagnose."

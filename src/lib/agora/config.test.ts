@@ -20,6 +20,7 @@ const AGORA_KEYS = [
   "AGORA_REST_SECRET",
   "AGORA_PHI_POSTURE",
   "AGORA_BAA_REFERENCE",
+  "HEALTHGUARD_LLM_PHI_POSTURE",
 ] as const;
 
 const saved: Record<string, string | undefined> = {};
@@ -113,10 +114,21 @@ describe("capabilities", () => {
     expect(caps.storedTranscript).toBe(false);
   });
 
-  it("unlocks the PHI-bearing features once a BAA is on file", () => {
+  it("does not inject patient context on an Agora-only BAA", () => {
     fullyConfigured();
     process.env.AGORA_PHI_POSTURE = "baa-signed";
     process.env.AGORA_BAA_REFERENCE = "MSA-2026-0142";
+    const caps = capabilities();
+    expect(caps.recording).toBe(true);
+    expect(caps.storedTranscript).toBe(true);
+    expect(caps.phiInPrompt).toBe(false);
+  });
+
+  it("unlocks chart-aware prompting only with both attestations", () => {
+    fullyConfigured();
+    process.env.AGORA_PHI_POSTURE = "baa-signed";
+    process.env.AGORA_BAA_REFERENCE = "MSA-2026-0142";
+    process.env.HEALTHGUARD_LLM_PHI_POSTURE = "attested";
     expect(capabilities()).toEqual({
       consult: true,
       voiceNavigator: true,
@@ -124,6 +136,14 @@ describe("capabilities", () => {
       recording: true,
       storedTranscript: true,
     });
+  });
+
+  it("unlocks recording once a BAA is on file", () => {
+    fullyConfigured();
+    process.env.AGORA_PHI_POSTURE = "baa-signed";
+    process.env.AGORA_BAA_REFERENCE = "MSA-2026-0142";
+    expect(capabilities().recording).toBe(true);
+    expect(capabilities().storedTranscript).toBe(true);
   });
 
   it("does not unlock PHI features on a BAA claim without REST credentials", () => {

@@ -12,9 +12,9 @@
  * API: POST https://api.agora.io/api/speech-to-text/v1/projects/{appid}/join
  *      POST .../agents/{agentId}/leave
  */
-import { assertPhiAllowed, capabilities } from "./config";
-import { getAgoraConfig } from "./config";
-import { agoraPost } from "./rest";
+import { assertPhiAllowed, capabilities, getAgoraConfig } from "./config";
+import { agoraPost, isAlreadyGone } from "./rest";
+import { agoraStorageConfig } from "./storage";
 import { BOT_UIDS } from "./token";
 
 export interface StartTranscriptionOptions {
@@ -44,32 +44,6 @@ interface JoinResponse {
   status: string;
 }
 
-/**
- * Storage config for persisted captions. Read from env rather than accepted
- * from the caller: a request-controlled bucket would be an exfiltration path
- * for exactly the data this gate exists to protect.
- */
-function storageConfig(): Record<string, unknown> {
-  const required = [
-    "AGORA_STORAGE_VENDOR",
-    "AGORA_STORAGE_REGION",
-    "AGORA_STORAGE_BUCKET",
-    "AGORA_STORAGE_ACCESS_KEY",
-    "AGORA_STORAGE_SECRET_KEY",
-  ];
-  const missing = required.filter((n) => (process.env[n] ?? "").trim() === "");
-  if (missing.length > 0) {
-    throw new Error(`persisted transcripts need: ${missing.join(", ")}`);
-  }
-  return {
-    vendor: Number(process.env.AGORA_STORAGE_VENDOR),
-    region: Number(process.env.AGORA_STORAGE_REGION),
-    bucket: process.env.AGORA_STORAGE_BUCKET,
-    accessKey: process.env.AGORA_STORAGE_ACCESS_KEY,
-    secretKey: process.env.AGORA_STORAGE_SECRET_KEY,
-    fileNamePrefix: ["healthguard", "transcripts"],
-  };
-}
 
 export async function startTranscription(
   options: StartTranscriptionOptions,
@@ -103,7 +77,10 @@ export async function startTranscription(
   };
 
   if (persist) {
-    body.captionConfig = { sliceDuration: 60, storage: storageConfig() };
+    body.captionConfig = {
+      sliceDuration: 60,
+      storage: agoraStorageConfig(["healthguard", "transcripts"]),
+    };
   }
 
   const response = await agoraPost<JoinResponse>(
@@ -121,11 +98,15 @@ export async function startTranscription(
 
 export async function stopTranscription(agentId: string): Promise<void> {
   const { appId } = getAgoraConfig();
-  await agoraPost<Record<string, never>>(
-    `/api/speech-to-text/v1/projects/${appId}/agents/${encodeURIComponent(agentId)}/leave`,
-    {},
-    "speech-to-text leave",
-  );
+  try {
+    await agoraPost<Record<string, never>>(
+      `/api/speech-to-text/v1/projects/${appId}/agents/${encodeURIComponent(agentId)}/leave`,
+      {},
+      "speech-to-text leave",
+    );
+  } catch (error) {
+    if (!isAlreadyGone(error)) throw error;
+  }
 }
 
 /** Whether persisted transcripts are currently permitted. */

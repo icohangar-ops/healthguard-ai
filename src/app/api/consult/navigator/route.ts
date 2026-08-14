@@ -6,9 +6,10 @@
  */
 import { NextResponse } from "next/server";
 
-import { PhiPostureError, missingEnv } from "@/lib/agora/config";
+import { missingEnv } from "@/lib/agora/config";
 import { startNavigator, stopNavigator } from "@/lib/agora/navigator";
-import { getSession, updateSession } from "@/lib/agora/session";
+import { consultErrorResponse } from "@/lib/agora/rest";
+import { getSession, releaseSlot, reserveSlot, updateSession } from "@/lib/agora/session";
 import { BOT_UIDS, mintRtcToken } from "@/lib/agora/token";
 import { requirePatientAuth } from "@/lib/require-patient-auth";
 
@@ -53,7 +54,7 @@ export async function POST(request: Request) {
   if (!session) {
     return NextResponse.json({ error: "Unknown or expired session" }, { status: 404 });
   }
-  if (session.navigatorAgentId) {
+  if (!reserveSlot(session.sessionId, "navigatorAgentId")) {
     return NextResponse.json(
       { error: "Navigator is already running for this session" },
       { status: 409 },
@@ -63,7 +64,6 @@ export async function POST(request: Request) {
   const language = typeof body.language === "string" ? body.language : "en-US";
 
   try {
-    // The navigator joins as its own reserved uid, with its own token.
     const botToken = mintRtcToken({
       channel: session.channel,
       uid: BOT_UIDS.navigator,
@@ -86,16 +86,11 @@ export async function POST(request: Request) {
       phiEnabled: agent.phiEnabled,
       notice: agent.phiEnabled
         ? "Navigator has access to this patient's record."
-        : "Navigator is running without patient context (no BAA on file).",
+        : "Navigator is running without patient context.",
     });
   } catch (error) {
-    if (error instanceof PhiPostureError) {
-      return NextResponse.json({ error: error.message }, { status: 403 });
-    }
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to start navigator" },
-      { status: 502 },
-    );
+    releaseSlot(session.sessionId, "navigatorAgentId");
+    return consultErrorResponse(error, "Failed to start navigator");
   }
 }
 
@@ -111,7 +106,7 @@ export async function DELETE(request: Request) {
   if (!session) {
     return NextResponse.json({ error: "Unknown or expired session" }, { status: 404 });
   }
-  if (!session.navigatorAgentId) {
+  if (!session.navigatorAgentId || session.navigatorAgentId === "pending") {
     return NextResponse.json({ stopped: false, reason: "no navigator running" });
   }
 
@@ -120,9 +115,6 @@ export async function DELETE(request: Request) {
     updateSession(session.sessionId, { navigatorAgentId: undefined });
     return NextResponse.json({ stopped: true });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to stop navigator" },
-      { status: 502 },
-    );
+    return consultErrorResponse(error, "Failed to stop navigator");
   }
 }
