@@ -10,7 +10,7 @@
  * Agora, the operator sees exactly which controls are disabled and why —
  * far better than a "Record" button that 403s the moment someone needs it.
  */
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   AlertTriangle,
   Bot,
@@ -67,6 +67,10 @@ export function ConsultRoom({ apiToken, role, displayName, patientId }: ConsultR
   const [voiceAgent, setVoiceAgent] = useState<ToggleState>(IDLE);
   const [captions, setCaptions] = useState<ToggleState>(IDLE);
   const [recording, setRecording] = useState<ToggleState>(IDLE);
+  const voiceAgentRef = useRef<ToggleState>(IDLE);
+  const captionsRef = useRef<ToggleState>(IDLE);
+  const recordingRef = useRef<ToggleState>(IDLE);
+  const toggleGenerationRef = useRef(0);
 
   const caps = credentials?.capabilities;
   const sessionId = credentials?.sessionId;
@@ -76,29 +80,72 @@ export function ConsultRoom({ apiToken, role, displayName, patientId }: ConsultR
   const call = useCallback(
     async (
       path: string,
-      state: ToggleState,
-      setState: (s: ToggleState) => void,
+      ref: React.MutableRefObject<ToggleState>,
+      setState: React.Dispatch<React.SetStateAction<ToggleState>>,
       body: Record<string, unknown> = {},
     ) => {
       if (!sessionId) return;
-      setState({ ...state, pending: true, error: null });
+
+      const current = ref.current;
+      if (current.pending) return;
+      const wasOn = current.on;
+      const generation = toggleGenerationRef.current;
+      const pending = { ...current, pending: true, error: null };
+      ref.current = pending;
+      setState(pending);
+
+      const headers = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiToken}`,
+      };
+
       try {
         const response = await fetch(path, {
-          method: state.on ? "DELETE" : "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiToken}`,
-          },
+          method: wasOn ? "DELETE" : "POST",
+          headers,
           body: JSON.stringify({ sessionId, ...body }),
         });
-        const payload = await response.json();
+        const payload = (await response.json()) as { error?: string };
+
+        if (generation !== toggleGenerationRef.current) {
+          // Leave invalidated this request. hangUp's DELETE no-ops while the
+          // slot is still pending, so stop now that start has landed.
+          if (!wasOn && (response.ok || response.status === 409)) {
+            try {
+              await fetch(path, {
+                method: "DELETE",
+                headers,
+                body: JSON.stringify({ sessionId }),
+              });
+            } catch {
+              // Best-effort; Agora idle timeouts are the backstop.
+            }
+          }
+          return;
+        }
+
+        // 409 on start means the feature is already running (double-click or
+        // a concurrent start). Treat as on so hangUp still issues DELETE.
+        if (response.status === 409 && !wasOn) {
+          const next = { pending: false, on: true, error: null };
+          ref.current = next;
+          setState(next);
+          return;
+        }
         if (!response.ok) throw new Error(payload.error ?? "Request failed");
-        setState({ pending: false, on: !state.on, error: null });
+        const next = { pending: false, on: !wasOn, error: null };
+        ref.current = next;
+        setState(next);
       } catch (err) {
-        setState({
-          pending: false,
-          on: state.on,
-          error: err instanceof Error ? err.message : "Request failed",
+        if (generation !== toggleGenerationRef.current) return;
+        setState((prev) => {
+          const next = {
+            pending: false,
+            on: prev.on,
+            error: err instanceof Error ? err.message : "Request failed",
+          };
+          ref.current = next;
+          return next;
         });
       }
     },
@@ -106,9 +153,11 @@ export function ConsultRoom({ apiToken, role, displayName, patientId }: ConsultR
   );
 
   const hangUp = useCallback(async () => {
+    toggleGenerationRef.current += 1;
     if (sessionId) {
-      const stop = async (path: string, on: boolean) => {
-        if (!on) return;
+      const stop = async (path: string, feature: ToggleState) => {
+        // pending covers an in-flight POST whose success has not flipped `on`.
+        if (!feature.on && !feature.pending) return;
         try {
           await fetch(path, {
             method: "DELETE",
@@ -123,15 +172,18 @@ export function ConsultRoom({ apiToken, role, displayName, patientId }: ConsultR
         }
       };
       // Recording first so a dropped call still produces files.
-      await stop("/api/consult/record", recording.on);
-      await stop("/api/consult/navigator", voiceAgent.on);
-      await stop("/api/consult/transcript", captions.on);
+      await stop("/api/consult/record", recordingRef.current);
+      await stop("/api/consult/navigator", voiceAgentRef.current);
+      await stop("/api/consult/transcript", captionsRef.current);
     }
+    voiceAgentRef.current = IDLE;
+    captionsRef.current = IDLE;
+    recordingRef.current = IDLE;
     setVoiceAgent(IDLE);
     setCaptions(IDLE);
     setRecording(IDLE);
     await leave();
-  }, [apiToken, sessionId, recording.on, voiceAgent.on, captions.on, leave]);
+  }, [apiToken, sessionId, leave]);
 
   if (status === "idle" || status === "error") {
     return (
@@ -262,7 +314,7 @@ export function ConsultRoom({ apiToken, role, displayName, patientId }: ConsultR
             available={Boolean(caps?.voiceNavigator) && connected}
             unavailableReason="Agora REST credentials are not configured."
             onToggle={() =>
-              void call("/api/consult/navigator", voiceAgent, setVoiceAgent)
+              void call("/api/consult/navigator", voiceAgentRef, setVoiceAgent)
             }
           />
 
@@ -274,7 +326,7 @@ export function ConsultRoom({ apiToken, role, displayName, patientId }: ConsultR
             available={false}
             unavailableReason="Caption rendering is not wired yet. The transcript task API exists for a later UI."
             onToggle={() =>
-              void call("/api/consult/transcript", captions, setCaptions, {
+              void call("/api/consult/transcript", captionsRef, setCaptions, {
                 persist: Boolean(caps?.storedTranscript),
               })
             }
@@ -287,7 +339,7 @@ export function ConsultRoom({ apiToken, role, displayName, patientId }: ConsultR
             state={recording}
             available={Boolean(caps?.recording) && connected}
             unavailableReason="Recording a consult stores PHI with Agora. Requires a signed BAA."
-            onToggle={() => void call("/api/consult/record", recording, setRecording)}
+            onToggle={() => void call("/api/consult/record", recordingRef, setRecording)}
           />
         </div>
       </CardContent>

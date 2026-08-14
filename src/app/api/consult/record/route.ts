@@ -69,7 +69,10 @@ export async function POST(request: Request) {
     const handle = await startRecording({
       channel: session.channel,
       token: botToken.token,
-      uids: session.humanUids,
+      // Empty list = subscribe to everyone, including late joiners (e.g. a
+      // clinician who enters after record is already on). A whitelist of
+      // session.humanUids would miss anyone who joins after this call.
+      uids: [],
     });
 
     updateSession(session.sessionId, {
