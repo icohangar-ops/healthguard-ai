@@ -21,7 +21,11 @@ export interface StartNavigatorOptions {
   readonly channel: string;
   /** RTC token the navigator uses to join, minted for BOT_UIDS.navigator. */
   readonly token: string;
-  /** Human uids the navigator should listen to. */
+  /**
+   * Human uid(s) the navigator should listen to.
+   * Agora Conversational AI join currently accepts one interactive user id;
+   * only the first entry is sent as `remote_rtc_uids`.
+   */
   readonly listenTo: readonly number[];
   /** Opaque handle the LLM bridge uses to look up patient context. */
   readonly sessionId: string;
@@ -119,7 +123,8 @@ export async function startNavigator(
       channel,
       token,
       agent_rtc_uid: String(BOT_UIDS.navigator),
-      remote_rtc_uids: listenTo.map(String),
+      // Join supports a single interactive uid; extra entries are ignored.
+      remote_rtc_uids: listenTo.slice(0, 1).map(String),
       enable_string_uid: false,
       idle_timeout: idleTimeout,
       asr: {

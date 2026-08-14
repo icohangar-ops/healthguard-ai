@@ -63,6 +63,15 @@ export async function POST(request: Request) {
 
   const language = typeof body.language === "string" ? body.language : "en-US";
 
+  // Agora Conversational AI join currently supports one interactive uid.
+  // Prefer the patient (first human uid when a patient record is attached);
+  // otherwise whoever joined first.
+  const listenTo = session.humanUids[0];
+  if (listenTo === undefined) {
+    releaseSlot(session.sessionId, "navigatorAgentId");
+    return NextResponse.json({ error: "No participants to listen to" }, { status: 400 });
+  }
+
   try {
     const botToken = mintRtcToken({
       channel: session.channel,
@@ -73,7 +82,7 @@ export async function POST(request: Request) {
     const agent = await startNavigator({
       channel: session.channel,
       token: botToken.token,
-      listenTo: session.humanUids,
+      listenTo: [listenTo],
       sessionId: session.sessionId,
       language,
     });
