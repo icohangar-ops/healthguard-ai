@@ -70,6 +70,7 @@ export function ConsultRoom({ apiToken, role, displayName, patientId }: ConsultR
   const voiceAgentRef = useRef<ToggleState>(IDLE);
   const captionsRef = useRef<ToggleState>(IDLE);
   const recordingRef = useRef<ToggleState>(IDLE);
+  const toggleGenerationRef = useRef(0);
 
   const caps = credentials?.capabilities;
   const sessionId = credentials?.sessionId;
@@ -88,20 +89,41 @@ export function ConsultRoom({ apiToken, role, displayName, patientId }: ConsultR
       const current = ref.current;
       if (current.pending) return;
       const wasOn = current.on;
+      const generation = toggleGenerationRef.current;
       const pending = { ...current, pending: true, error: null };
       ref.current = pending;
       setState(pending);
 
+      const headers = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiToken}`,
+      };
+
       try {
         const response = await fetch(path, {
           method: wasOn ? "DELETE" : "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiToken}`,
-          },
+          headers,
           body: JSON.stringify({ sessionId, ...body }),
         });
         const payload = (await response.json()) as { error?: string };
+
+        if (generation !== toggleGenerationRef.current) {
+          // Leave invalidated this request. hangUp's DELETE no-ops while the
+          // slot is still pending, so stop now that start has landed.
+          if (!wasOn && (response.ok || response.status === 409)) {
+            try {
+              await fetch(path, {
+                method: "DELETE",
+                headers,
+                body: JSON.stringify({ sessionId }),
+              });
+            } catch {
+              // Best-effort; Agora idle timeouts are the backstop.
+            }
+          }
+          return;
+        }
+
         // 409 on start means the feature is already running (double-click or
         // a concurrent start). Treat as on so hangUp still issues DELETE.
         if (response.status === 409 && !wasOn) {
@@ -115,6 +137,7 @@ export function ConsultRoom({ apiToken, role, displayName, patientId }: ConsultR
         ref.current = next;
         setState(next);
       } catch (err) {
+        if (generation !== toggleGenerationRef.current) return;
         setState((prev) => {
           const next = {
             pending: false,
@@ -130,6 +153,7 @@ export function ConsultRoom({ apiToken, role, displayName, patientId }: ConsultR
   );
 
   const hangUp = useCallback(async () => {
+    toggleGenerationRef.current += 1;
     if (sessionId) {
       const stop = async (path: string, feature: ToggleState) => {
         // pending covers an in-flight POST whose success has not flipped `on`.
