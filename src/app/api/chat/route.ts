@@ -3,27 +3,10 @@ import { db } from '@/lib/db';
 import ZAI, { type ChatMessage } from 'z-ai-web-dev-sdk';
 import { retry, withTimeout } from '@/lib/resilience';
 import { requirePatientAuth } from '@/lib/require-patient-auth';
+// Shared with the Agora voice navigator so the safety rules only exist once.
+import { SYSTEM_PROMPT, withPatientContext } from '@/lib/clinical-prompt';
 
 const zai = await ZAI.create();
-
-const SYSTEM_PROMPT = `You are HealthGuard AI, a clinical decision support assistant powered by Gemini. You provide evidence-based health guidance, analyze patient vitals, flag anomalies, and suggest follow-up actions.
-
-CRITICAL RULES:
-- NEVER diagnose a condition — always recommend consulting a healthcare provider
-- Keep responses clear, concise, and actionable
-- When analyzing vitals, reference normal ranges and flag concerning trends
-- Use clinical terminology appropriately but explain when needed
-- Structure responses with bullet points when listing recommendations
-- If patient context is provided, reference specific values in your analysis
-- Always prioritize patient safety in recommendations
-
-NORMAL VITALS RANGES (for reference):
-- Heart Rate: 60-100 bpm
-- Blood Pressure: <120/80 mmHg (normal), 120-139/80-89 (elevated), ≥140/90 (high)
-- Temperature: 97.8-99.1°F (36.5-37.3°C)
-- SpO2: 95-100%
-
-Format your responses using markdown for clarity.`;
 
 export async function POST(request: Request) {
   const unauthorized = requirePatientAuth(request);
@@ -40,12 +23,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Messages are required' }, { status: 400 });
     }
 
-    const contextBlock = patientContext
-      ? `\n\n---\n**Current Patient Context:**\n${patientContext}\n---\nConsider this patient data in your response. Remember to never diagnose.`
-      : '';
-
     const fullMessages: ChatMessage[] = [
-      { role: 'system', content: SYSTEM_PROMPT + contextBlock },
+      { role: 'system', content: withPatientContext(SYSTEM_PROMPT, patientContext) },
       ...messages.map(m => ({ role: m.role, content: m.content })),
     ];
 
