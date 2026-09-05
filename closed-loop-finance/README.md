@@ -1,49 +1,59 @@
 <div align="center">
 
-# Closed Loop Finance
+# Trust Ledger OS
 
-**A reusable, AI-native finance operating template and a stateful 4-agent reference implementation that automates the closed-loop month-end review.**
+**A trust and risk control plane for AI teams. Every high-impact change is reviewed, traced, and recorded before it reaches customers or cash.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-green.svg)](https://python.org)
 [![LangGraph](https://img.shields.io/badge/Orchestration-LangGraph-purple.svg)](https://github.com/langchain-ai/langgraph)
 [![Vertex AI](https://img.shields.io/badge/Cloud-GCP%20Vertex%20AI-blue.svg)](https://cloud.google.com/vertex-ai)
+[![PRISMtrace](https://img.shields.io/badge/Observability-PRISMtrace-black)](https://blockconvey.com)
 
 </div>
 
 ---
 
-## The Problem
+## Problem
 
-Most CFOs run an **open loop**: a decision is made, executed, and rarely measured against its own assumptions. Variance analysis is written once, read once, archived forever. Institutional knowledge lives in one person's head. Every layer of the org chart adds latency and loses signal.
+AI teams are shipping code, spend, and agent actions faster than humans can review them. Existing tools catch bugs or logs, but not product policy drift, runtime risk, and approval history in one place.
 
-| Open Loop (status quo) | Closed Loop (this repo) |
-|---|---|
-| Senior controller carries 80% of institutional knowledge in their head | Decisions live in a structured Notion DB the LLM can query |
-| Variance commentary is written, read once, archived | Variance becomes a decision row that next month's run retrieves |
-| Each layer of the org chart adds latency and loses signal | Four agents replace translation; humans approve, don't transcribe |
-| Audit trail is reconstructed from emails | Every run writes an immutable, hash-stamped audit note |
+Trust Ledger OS closes that gap by making every high-impact change reviewed, traced, and recorded before it reaches customers or cash.
 
-Velocity in finance = velocity of information flow. Removing every layer of human routing is a direct speed gain — without losing control, because the human still gates every external write.
+## What It Does
 
----
+Trust Ledger OS turns risky changes into a governed workflow:
 
-## What This Is
+1. Capture a code change, spend request, or agent action.
+2. Review it against product policy and trust rules.
+3. Attach a PRISM trace to the runtime decision.
+4. Produce an approve / deny / counter outcome.
+5. Store the decision in a ledger future runs can reuse.
 
-Two layers, one repository:
+## Why It Wins the Track
 
-```
-closed-loop-finance/
-  (template)  folder structure + Drive artifacts the CFO operates from
-  agents/     a code-native 4-agent reference build that automates the loop
-```
+- It reduces operational risk from AI-written code and autonomous spend.
+- It gives product, finance, and engineering one shared approval trail.
+- It shows how teams can ship fast without losing control.
 
-- **CFO who wants the methodology now** → use the template + Claude Cowork instructions in `00 Claude Setup/`.
-- **Eng team standing up an agentic finance build** → start in `agents/` and point it at any well-structured Drive folder.
+## Core Tools
 
-Both layers share the same source of truth: the file system here, plus a Notion Decision Log you create once.
+- **PRISM**: runtime observability for agent calls, approvals, and latency.
+- **Prelint**: pre-merge product review for policy drift and risky defaults.
+- **GIDE**: secure offline editing and emergency fixes when the network is not trusted.
 
----
+## Repo Base
+
+Built on `healthguard-ai/closed-loop-finance`, with patterns from:
+
+- `agentpay-v2` for spend decisions
+- `decision-brief` for adversarial review and decision records
+- `councilpay` for quorum-based approval flows
+- `forge` for agent pipeline telemetry
+
+## Demo
+
+The 2-minute video plan and FFmpeg render command live in [`docs/TRUST_LEDGER_OS_VIDEO.md`](docs/TRUST_LEDGER_OS_VIDEO.md).
 
 ## Architecture Overview
 
@@ -78,10 +88,22 @@ START -> evidence -> analyst -> memory_retrieve -> cfo_brief
 
 | # | Agent | Job | LLM? | Tools |
 |---|---|---|---|---|
-| 1 | **Evidence** | Load every file under the period folder, parse, hash, return typed `Evidence` | No (deterministic) | drive loader |
-| 2 | **Analyst** | Variance / cut-off / cash / inventory analysis. Splits **facts vs. assumptions** | Gemini 2.5 Pro | pandas, JSON schema |
-| 3 | **Memory** | Retrieve prior decisions (Notion + Vector Search) before the brief; write decisions back **only after human approval** | Gemini 2.5 Flash | Notion API, Vertex Vector Search |
-| 4 | **CFO Brief** | Synthesize close memo + 3 board messages + proposed Notion rows; write memo + audit note | Gemini 2.5 Pro | file writer |
+| 1 | **Evidence** | Load evidence and hash inputs | No | file loader |
+| 2 | **Analyst** | Explain the risk signal and separate facts from assumptions | Gemini 2.5 Pro | pandas, schema |
+| 3 | **Memory** | Retrieve prior decisions and only write after approval | Gemini 2.5 Flash | Notion, Vector Search |
+| 4 | **CFO Brief** | Synthesize the memo, board message, and decision rows | Gemini 2.5 Pro | file writer |
+
+## Submission Screens
+
+- Trust dashboard with pending decisions
+- Prelint-style review findings
+- PRISM trace panel
+- GIDE offline edit flow
+- Decision ledger entry
+
+## BuilderBase Statement
+
+AI teams can ship code, spend, and agent actions faster than humans can review them. Existing tools catch bugs or logs, but not product policy drift, runtime risk, and approval history in one place. Trust Ledger OS closes that gap by making every high-impact change reviewed, traced, and recorded before it reaches customers or cash.
 
 ---
 
