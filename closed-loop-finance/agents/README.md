@@ -12,6 +12,7 @@ A stateful, orchestrated multi-agent system that automates the closed-loop month
 | Session state management | LangGraph **checkpointer** (SQLite local → Cloud SQL / Firestore prod) |
 | Persistent context / memory (RAG) | **Vertex AI Vector Search** over Drive + Notion Decision Log as structured memory |
 | End-to-end agentic workflow | Drive ingest → analyze → memory check → CFO brief → human approval → Notion write → audit note |
+| LLM observability | **PRISMtrace** on BlockConvey for LangGraph + model-call traces |
 
 ## Architecture diagram (logical)
 
@@ -56,6 +57,16 @@ python -m src.run --period "2026-03 March Close"
 # 3. View the run trace
 langgraph dev    # opens local UI on :2024
 ```
+
+## PRISMtrace
+
+Set these environment variables to enable tracing:
+
+- `PRISMTRACE_API_KEY`
+- `PRISMTRACE_PROJECT_ID`
+- `PRISMTRACE_HOST` (optional; defaults to BlockConvey)
+
+When configured, the CLI attaches the PRISM LangGraph callback and flushes the trace on exit.
 
 ## Files
 

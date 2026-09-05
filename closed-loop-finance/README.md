@@ -147,6 +147,7 @@ This is not narrative. It is structural. The Memory Agent on cycle N+1 retrieves
 | **Human gate** | `interrupt_before=["memory_write"]` — no external write without explicit `y` |
 | **Audit** | Immutable note in `07 Audit Trail/` listing inputs, agents, outputs, decisions |
 | **Memory** | Notion DB is append-only by convention; corrections are new rows referencing prior `notion_id` |
+| **Observability** | PRISMtrace on BlockConvey for LangGraph spans and LLM calls |
 
 ---
 
@@ -377,4 +378,3 @@ This repository is hardened with the [Consensus Hardening Protocol (CHP)](https:
 
 ### CHP Version
 cognitive-mesh-orchestrator 0.1.0 | [Protocol Docs](https://codeberg.org/cubiczan/consensus-hardening-protocol)
-

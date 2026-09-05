@@ -33,6 +33,7 @@ rich>=13.9.0
 typer>=0.12.5
 pydantic>=2.9.0
 pytest>=8.3.0
+prismtrace-sdk>=0.4.2
 
 # Optional Azure adapter
 # azure-ai-projects>=1.0.0b3

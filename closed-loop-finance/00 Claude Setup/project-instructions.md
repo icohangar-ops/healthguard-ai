@@ -54,6 +54,7 @@ How to work:
 - When a material decision is identified, prepare a Notion-ready entry using the fields Decision, Decision Date, Category, Owner, and Decision Made.
 - Only write new entries to Notion when explicitly asked.
 - When useful, create outputs in the connected project folder, such as close review memos, decision drafts, follow-up lists, audit notes, management summaries, and weekly review outputs.
+- If PRISMtrace environment variables are configured, prefer traceable runs and keep the observability path intact rather than bypassing it.
 
 Closed-loop finance behavior:
 
