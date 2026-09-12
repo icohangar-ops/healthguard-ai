@@ -18,25 +18,16 @@
 import { timingSafeEqual } from "node:crypto";
 
 import { NextResponse } from "next/server";
-import ZAI, { type ChatMessage } from "z-ai-web-dev-sdk";
 
 import { capabilities } from "@/lib/agora/config";
 import { getSession } from "@/lib/agora/session";
 import { VOICE_SYSTEM_PROMPT, withPatientContext } from "@/lib/clinical-prompt";
 import { db } from "@/lib/db";
-import { retry, withTimeout } from "@/lib/resilience";
+import { recordCaseHistory, runPulseChat } from "@/lib/pulse";
 import { scoreVitals } from "@/lib/vitals-scoring";
-
-const zai = await ZAI.create();
 
 const SESSION_PREFIX = "healthguard-session:";
 
-/**
- * A spoken turn cannot be long, and a slow turn is worse than a short one —
- * dead air on a voice call reads as "it broke". Bound both.
- */
-const MAX_TOKENS = 220;
-const TURN_TIMEOUT_MS = 12_000;
 /** Agora's max_history is 16; keep the bridge at the same bound. */
 const MAX_TURNS = 16;
 const MAX_TURN_CHARS = 4_000;
@@ -222,28 +213,26 @@ export async function POST(request: Request) {
     }
   }
 
-  const messages: ChatMessage[] = [
-    {
-      role: "system",
-      content: withPatientContext(VOICE_SYSTEM_PROMPT, context ?? undefined, "plain"),
-    },
-    ...turns.map((m) => ({ role: m.role as ChatMessage["role"], content: m.content })),
-  ];
+  const prompt =
+    withPatientContext(VOICE_SYSTEM_PROMPT, context ?? undefined, "plain") +
+    "\n\nCONVERSATION:\n" +
+    turns.map((m) => `${m.role.toUpperCase()}: ${m.content}`).join("\n") +
+    "\n\nRespond to the latest user turn only. Keep the reply short and spoken.";
 
-  let content: string;
-  try {
-    const completion = await retry(
-      () =>
-        withTimeout(
-          zai.chat.completions.create({ messages, max_tokens: MAX_TOKENS }),
-          TURN_TIMEOUT_MS,
-          "navigator turn",
-        ),
-      { maxAttempts: 2 },
-    );
-    content = completion.choices[0]?.message?.content?.trim() || FALLBACK;
-  } catch {
-    content = FALLBACK;
+  const reply = await runPulseChat(prompt);
+  const content = reply.source === "pulse" ? reply.content : FALLBACK;
+
+  if (caps.phiInPrompt) {
+    const sessionId = extractSessionId(incoming);
+    const session = sessionId ? getSession(sessionId) : null;
+    if (session?.patientId) {
+      await recordCaseHistory({
+        caseId: session.patientId,
+        kind: reply.source === "pulse" ? "navigator" : "navigator",
+        title: reply.source === "pulse" ? "Voice navigator reply" : "Voice navigator fallback",
+        detail: content,
+      });
+    }
   }
 
   return body.stream === true

@@ -14,9 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "HealthGuard AI — Intelligent Healthcare Assistant",
+  title: "CareQueue AI — Pulse Triage Cockpit",
   description:
-    "Gemini-powered clinical decision support platform for real-time patient vitals monitoring, AI-assisted triage, and evidence-based health guidance. Built for the Build with Gemini XPRIZE Challenge.",
+    "Pulse-backed triage workspace for care teams. Score incoming cases, surface escalation paths, and learn from outcomes with a lightweight closed loop.",
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
   },

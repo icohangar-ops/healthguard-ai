@@ -7,6 +7,10 @@
  * inherits HealthGuard's existing clinical system prompt and never-diagnose
  * rules rather than being a second, unsupervised brain.
  *
+ * The TTS side can use ElevenLabs when the operator configures its API key
+ * and voice id. We keep the vendor pluggable so the spoken layer can stay
+ * separate from the reasoning layer.
+ *
  * That callback shape is also what makes the PHI gate enforceable: patient
  * context is decided server-side in the bridge, not passed through Agora.
  *
@@ -74,11 +78,44 @@ function requiredEnv(name: string): string {
  * rather than an inferred request host, to avoid a Host-header rebind
  * pointing Agora's callback somewhere else.
  */
-function ttsParams(): Record<string, unknown> {
-  const raw = requiredEnv("AGORA_TTS_PARAMS");
+function ttsVendor(): string {
+  const configured = (process.env.AGORA_TTS_VENDOR ?? "").trim();
+  if (configured !== "") return configured;
+  return (process.env.ELEVENLABS_API_KEY ?? "").trim() !== "" ? "elevenlabs" : "";
+}
+
+function ttsParams(vendor: string): Record<string, unknown> {
+  const raw = (process.env.AGORA_TTS_PARAMS ?? "").trim();
+  if (raw !== "") {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new Error("AGORA_TTS_PARAMS must be a JSON object");
+    }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      throw new Error("AGORA_TTS_PARAMS must be a JSON object");
+    }
+    return parsed as Record<string, unknown>;
+  }
+
+  if (vendor === "elevenlabs") {
+    const apiKey = (process.env.ELEVENLABS_API_KEY ?? "").trim();
+    const voiceId = (process.env.ELEVENLABS_VOICE_ID ?? "").trim();
+    if (apiKey === "" || voiceId === "") {
+      throw new Error("ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID are required for ElevenLabs TTS");
+    }
+    return {
+      api_key: apiKey,
+      voice_id: voiceId,
+      model_id: (process.env.ELEVENLABS_MODEL_ID ?? "eleven_multilingual_v2").trim(),
+    };
+  }
+
+  const rawFallback = requiredEnv("AGORA_TTS_PARAMS");
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(rawFallback);
   } catch {
     throw new Error("AGORA_TTS_PARAMS must be a JSON object");
   }
@@ -145,10 +182,16 @@ export async function startNavigator(
         max_history: 16,
         params: { model: process.env.AGORA_NAVIGATOR_MODEL || "healthguard-navigator" },
       },
-      tts: {
-        vendor: requiredEnv("AGORA_TTS_VENDOR"),
-        params: ttsParams(),
-      },
+      tts: (() => {
+        const vendor = ttsVendor();
+        if (vendor === "") {
+          throw new Error("AGORA_TTS_VENDOR or ELEVENLABS_API_KEY is not configured");
+        }
+        return {
+          vendor,
+          params: ttsParams(vendor),
+        };
+      })(),
     },
   };
 
