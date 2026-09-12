@@ -7,7 +7,13 @@ CareQueue AI
 `docs/thumbnail.png`
 
 ## Vision
-CareQueue AI solves the intake bottleneck in healthcare by turning a scattered stream of notes and alerts into a ranked, explainable triage queue. It uses Pulse Evorozen as the living state layer so case history, reasoning, and feedback survive beyond a single session. The result is a lightweight care navigation cockpit that helps teams decide who needs attention now, what to verify next, and what to learn from each outcome.
+CareQueue AI solves the intake bottleneck in healthcare by turning a scattered stream of notes and alerts into a ranked, explainable triage queue. Pulse Evorozen is the living state layer: it stores the triage queue, the case timeline, and the learning signals, and it powers the navigator chat used to explain the current case. The result is a lightweight care navigation cockpit that helps teams decide who needs attention now, what to verify next, and what to learn from each outcome.
+
+## How Pulse Evorozen is used
+- `create_schema` defines the triage tables.
+- `select_data` loads the queue, memory, and case history.
+- `insert_data` writes feedback and timeline updates.
+- `chat` generates the navigator response for the selected case.
 
 ## Category
 Healthcare
@@ -15,7 +21,7 @@ Healthcare
 ## Links
 
 ### GitHub
-https://github.com/Cubiczan/healthguard-ai
+https://github.com/icohangar-ops/carequeue-ai
 
 ### Project website
 N/A
@@ -24,4 +30,4 @@ N/A
 TBD after upload to YouTube
 
 ## Social links
-https://github.com/Cubiczan
+https://github.com/icohangar-ops/carequeue-ai
