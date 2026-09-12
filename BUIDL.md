@@ -30,4 +30,4 @@ N/A
 TBD after upload to YouTube
 
 ## Social links
-https://github.com/icohangar-ops/carequeue-ai
+https://github.com/Cubiczan
