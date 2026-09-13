@@ -9,6 +9,12 @@ COPY src/ src/
 COPY demo.py .
 COPY tests/ tests/
 
+RUN groupadd --gid 10001 appuser \
+    && useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin appuser \
+    && chown -R 10001:10001 /app
+
+USER 10001
+
 ENV PYTHONPATH=src
 
 CMD ["python", "demo.py", "--fast"]
