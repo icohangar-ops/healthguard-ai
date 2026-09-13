@@ -10,7 +10,12 @@ from convergence.api.routes.workstreams import router as workstreams_router
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Convergence",
-        description="Post-Merger Integration Intelligence Platform - CHP-governed multi-agent Convergence",
+        description=(
+            "Post-Merger Integration Intelligence Platform - CHP-governed multi-agent Convergence\n\n"
+            "## Authentication\n\n"
+            "Decision endpoints require API key authentication. "
+            "Include the `X-API-Key` header with your requests to access decision data."
+        ),
         version="0.1.0",
     )
     app.add_middleware(

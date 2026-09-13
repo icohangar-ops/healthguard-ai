@@ -3,8 +3,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException
 
+from convergence.api.security import verify_api_key
 from convergence.chp.orchestrator import CHPOrchestrator
 from convergence.chp.registry import DecisionRegistry
 from convergence.chp.models import DecisionCase, Dossier, FoundationAttack, FoundationDisclosure, SessionStatus, WorkstreamType
@@ -17,17 +18,6 @@ router = APIRouter(prefix="/api/v1", tags=["workstreams"])
 # Security configuration
 MAX_VALIDATION_LOG_SIZE = 100
 MAX_VALIDATION_FIELD_LENGTH = 10000
-
-
-def verify_api_key(x_api_key: str = Header(None)) -> str:
-    """Verify API key for authenticated endpoints."""
-    if not x_api_key:
-        raise HTTPException(status_code=401, detail="Missing API key")
-    # In production, validate against a secure key store
-    # For now, require any non-empty key as a basic gate
-    if len(x_api_key) < 16:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    return x_api_key
 
 # In-memory state (production would use DB)
 _registry = DecisionRegistry()
@@ -121,7 +111,11 @@ def add_blocked_decision(decision: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @router.get("/decisions")
-def list_decisions(domain: str = "", status: str = "", api_key: str = Depends(verify_api_key)) -> Dict[str, Any]:
+def list_decisions(
+    domain: str = "",
+    status: str = "",
+    api_key: str = Depends(verify_api_key)
+) -> Dict[str, Any]:
     cases = _registry.all()
     if domain:
         cases = [c for c in cases if c.domain == domain]
@@ -131,7 +125,10 @@ def list_decisions(domain: str = "", status: str = "", api_key: str = Depends(ve
 
 
 @router.get("/decisions/{decision_id}")
-def get_decision(decision_id: str, api_key: str = Depends(verify_api_key)) -> Dict[str, Any]:
+def get_decision(
+    decision_id: str,
+    api_key: str = Depends(verify_api_key)
+) -> Dict[str, Any]:
     case = _registry.get(decision_id)
     if not case:
         raise HTTPException(404, f"Decision not found: {decision_id}")
@@ -139,7 +136,11 @@ def get_decision(decision_id: str, api_key: str = Depends(verify_api_key)) -> Di
 
 
 @router.post("/decisions/{decision_id}/validate")
-def validate_decision(decision_id: str, validation: Dict[str, Any], api_key: str = Depends(verify_api_key)) -> Dict[str, Any]:
+def validate_decision(
+    decision_id: str,
+    validation: Dict[str, Any],
+    api_key: str = Depends(verify_api_key)
+) -> Dict[str, Any]:
     from convergence.chp.models import ThirdPartyValidation, ValidationResult
     
     # Validate input field lengths to prevent memory exhaustion
@@ -186,7 +187,10 @@ def validate_decision(decision_id: str, validation: Dict[str, Any], api_key: str
 
 
 @router.post("/decisions/{decision_id}/advance")
-def advance_decision(decision_id: str) -> Dict[str, Any]:
+def advance_decision(
+    decision_id: str,
+    api_key: str = Depends(verify_api_key)
+) -> Dict[str, Any]:
     try:
         case = _orchestrator.advance_to_provisional_lock(decision_id)
         return {"decision_id": decision_id, "status": case.status.value}
