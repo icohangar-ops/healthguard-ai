@@ -88,5 +88,8 @@
     "typescript-eslint": "^8.38.0",
     "vite": "^5.4.19",
     "vitest": "^3.2.4"
+  },
+  "overrides": {
+    "lodash": "https://npm.aikido.io/241fc32efb444a7e76965/lodash@4.17.21-aikido.2"
   }
 }
