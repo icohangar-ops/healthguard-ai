@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { requirePatientAuth } from '@/lib/require-patient-auth';
 
 // GET /api/alerts — List alerts with optional filtering
 export async function GET(request: Request) {
+  const unauthorized = requirePatientAuth(request);
+  if (unauthorized) return unauthorized;
+
   try {
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type');
@@ -37,6 +41,9 @@ export async function GET(request: Request) {
 
 // PATCH /api/alerts — Acknowledge an alert
 export async function PATCH(request: Request) {
+  const unauthorized = requirePatientAuth(request);
+  if (unauthorized) return unauthorized;
+
   try {
     const body = await request.json();
     const { id, acknowledged } = body;

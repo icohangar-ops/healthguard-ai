@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { requirePatientAuth } from '@/lib/require-patient-auth';
 
 // GET /api/dashboard — Dashboard stats
-export async function GET() {
+export async function GET(request: Request) {
+  const unauthorized = requirePatientAuth(request);
+  if (unauthorized) return unauthorized;
+
   try {
     const totalPatients = await db.patient.count();
 
