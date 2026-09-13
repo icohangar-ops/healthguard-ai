@@ -7,13 +7,13 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # Set this to a strong value for production
-      - API_KEY=${API_KEY:-}
+      # REQUIRED: Set this to a strong value for production
+      - API_KEY=${API_KEY}
       # CockroachDB connection (defaults baked into main.py work too)
       - COCKROACH_HOST=${COCKROACH_HOST:-vortex-giraffe-15678.jxf.gcp-us-east1.cockroachlabs.cloud}
       - COCKROACH_PORT=${COCKROACH_PORT:-26257}
       - COCKROACH_USER=${COCKROACH_USER:-cubiczan}
-      - COCKROACH_PASSWORD=${COCKROACH_PASSWORD:-}
+      - COCKROACH_PASSWORD=${COCKROACH_PASSWORD}
       - COCKROACH_SSL=${COCKROACH_SSL:-require}
     restart: unless-stopped
     healthcheck:

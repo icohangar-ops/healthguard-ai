@@ -42,7 +42,13 @@ logger = logging.getLogger("db-proxy")
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-API_KEY = os.getenv("API_KEY", "")
+API_KEY = os.environ.get("API_KEY", "").strip()
+if not API_KEY:
+    raise RuntimeError(
+        "API_KEY environment variable must be set to a nonempty value. "
+        "The database proxy cannot start without authentication configured."
+    )
+
 COCKROACH_HOST = os.getenv(
     "COCKROACH_HOST",
     "vortex-giraffe-15678.jxf.gcp-us-east1.cockroachlabs.cloud",
@@ -122,11 +128,10 @@ app.add_middleware(
 # API Key auth
 # ---------------------------------------------------------------------------
 async def verify_api_key(request: Request):
-    """If API_KEY env var is set, require matching X-API-Key header."""
-    if API_KEY:
-        key = request.headers.get("X-API-Key")
-        if not key or key != API_KEY:
-            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    """Require matching X-API-Key header for all authenticated endpoints."""
+    key = request.headers.get("X-API-Key")
+    if not key or key != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
     return True
 
 # ---------------------------------------------------------------------------
@@ -941,7 +946,7 @@ async def startup():
     logger.info("=" * 60)
     logger.info("CockroachDB REST Proxy starting up")
     logger.info("Databases configured: %d", len(DATABASES))
-    logger.info("API Key auth: %s", "ENABLED" if API_KEY else "DISABLED")
+    logger.info("API Key auth: ENABLED (required)")
     logger.info("=" * 60)
 
 
