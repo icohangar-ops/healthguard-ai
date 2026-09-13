@@ -71,11 +71,20 @@ contract CourtVisionToken is ERC20, ERC20Burnable, Ownable, ReentrancyGuard {
         if (stakedBalance[msg.sender] < amount) revert InsufficientBalance();
 
         _updateRewards();
-        _claimRewards();
+        
+        // Only claim rewards if there are pending rewards to avoid revert on zero
+        uint256 pending = (stakedBalance[msg.sender] * accRewardPerShare) / 1e18
+                          - rewardDebt[msg.sender];
+        if (pending > 0) {
+            _claimRewards();
+        }
 
         stakedBalance[msg.sender] -= amount;
         totalStaked -= amount;
         stakeTimestamp[msg.sender] = block.timestamp;
+        
+        // Update reward debt after unstaking to reflect new staked balance
+        rewardDebt[msg.sender] = (stakedBalance[msg.sender] * accRewardPerShare) / 1e18;
 
         _transfer(address(this), msg.sender, amount);
 
