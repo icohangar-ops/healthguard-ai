@@ -1,13 +1,14 @@
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import desc, func, select
 
 from app.db import SessionLocal
 from app.models import ApprovalStatus, AuditLog, Escalation, HumanApproval, Workflow
+from app.security import require_admin_api_key
 from app.services.approval import ApprovalService
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin_api_key)])
 templates = Jinja2Templates(directory="app/templates")
 
 
