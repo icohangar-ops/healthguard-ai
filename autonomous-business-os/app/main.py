@@ -20,6 +20,19 @@ log = structlog.get_logger()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Validate critical security configuration before starting
+    insecure_defaults = ["change-me-admin-key", "change-me", ""]
+    if settings.admin_api_key in insecure_defaults:
+        log.error(
+            "startup_failed",
+            reason="ADMIN_API_KEY must be set to a secure value and cannot be a default placeholder",
+            configured_value_is_default=True,
+        )
+        raise RuntimeError(
+            "ADMIN_API_KEY environment variable must be set to a secure, non-default value. "
+            "The application will not start with a predictable or empty admin API key."
+        )
+
     init_db()
     scheduler = start_scheduler()
     log.info("business_os_started", environment=settings.environment)
