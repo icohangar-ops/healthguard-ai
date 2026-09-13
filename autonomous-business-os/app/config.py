@@ -12,7 +12,8 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./storage/business_os.sqlite3"
     redis_url: str = "redis://localhost:6379/0"
     secret_key: str = Field(default="change-me", repr=False)
-    admin_api_key: str = Field(default="change-me-admin-key", repr=False)
+    # admin_api_key is required and must be set via ADMIN_API_KEY environment variable
+    admin_api_key: str = Field(repr=False)
     log_level: str = "INFO"
 
     slack_signing_secret: str | None = Field(default=None, repr=False)
