@@ -147,8 +147,14 @@ resource "digitalocean_app" "convergence_api" {
       }
 
       env {
-        key   = "MODEL_ACCESS_KEY"
-        type  "SECRET"
+        key  = "CONVERGENCE_API_KEY"
+        type = "SECRET"
+        name = "convergence-api-key"
+      }
+
+      env {
+        key  = "MODEL_ACCESS_KEY"
+        type = "SECRET"
         name = "convergence-do-inference-key"
       }
 
