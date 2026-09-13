@@ -133,7 +133,13 @@ contract CourtVisionToken is ERC20, ERC20Burnable, Ownable, ReentrancyGuard {
     }
 
     function _updateRewards() internal {
-        if (block.number <= lastRewardBlock || totalStaked == 0) return;
+        if (block.number <= lastRewardBlock) return;
+
+        // Always update lastRewardBlock to prevent crediting empty intervals
+        if (totalStaked == 0) {
+            lastRewardBlock = block.number;
+            return;
+        }
 
         uint256 blocks = block.number - lastRewardBlock;
         uint256 rewards = (blocks * REWARD_RATE * totalStaked) / 10000;
