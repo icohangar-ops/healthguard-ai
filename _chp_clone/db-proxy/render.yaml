@@ -6,6 +6,7 @@ services:
     envVars:
       - key: API_KEY
         sync: false
+        # REQUIRED: Must be set to a nonempty value in Render dashboard
       - key: COCKROACH_HOST
         value: vortex-giraffe-15678.jxf.gcp-us-east1.cockroachlabs.cloud
       - key: COCKROACH_PORT
@@ -14,6 +15,7 @@ services:
         value: cubiczan
       - key: COCKROACH_PASSWORD
         sync: false
+        # REQUIRED: Must be set to a nonempty value in Render dashboard
       - key: COCKROACH_SSL
         value: require
     healthCheckPath: /api/market-radar
