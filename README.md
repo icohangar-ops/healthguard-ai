@@ -63,3 +63,19 @@ bun run dev
 ## GitHub
 
 - Repo: `https://github.com/icohangar-ops/carequeue-ai`
+
+## Propagation decisions
+
+Decisions from the portfolio propagation matrix (SecOps/Gov wave C), recorded
+per the adopt-or-reverse contract. Revisit triggers are binding: when the
+condition appears in this repo, re-evaluate the row.
+
+### Row 31 — typed claim lifecycle: PARTIAL — typed-claim half satisfied, human halves REVERSED
+
+Correction (wave-C audit; prelint caught the original rationale's false premise): this repo **does** carry the typed-claim half of the row — same lineage as its sibling carequeue-ai. `src/types.rs` defines `VerificationClaim` with a five-state lifecycle (`VerificationStatus::{Verified, Pending, Failed, Disputed, Expired}`), and `src/verification.rs` implements the `VerificationEngine` (claim-intensity parsing, `verify_claim` against actual scores with evidence URLs, greenwashing risk, evidence quality, consistency checks). The pipeline consumes both.
+
+What the row requires beyond that substrate — **four-eyes human review, human locks, an append-only evidence ledger, and lock-gated SHA-256 exports** — does not exist here: the verifier is the machine (`greenverify-ai`), no reviewer role exists, and there is no lock or export gate.
+
+**Decision:** typed-claim half satisfied organically (credited; keep in vocabulary sync with the canonical lifecycle — erp-control-plane column 4). The human review/lock/export halves remain **REVERSED**: no human reviewer exists, so they would be ceremony.
+
+**Revisit trigger:** a human reviewer role or human-consuming review queue enters the product flow — then adopt the canonical halves against the existing `VerificationClaim` substrate.
