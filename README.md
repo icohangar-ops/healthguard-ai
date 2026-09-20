@@ -63,3 +63,24 @@ bun run dev
 ## GitHub
 
 - Repo: `https://github.com/icohangar-ops/carequeue-ai`
+
+## Propagation decisions
+
+Decisions from the portfolio propagation matrix (SecOps/Gov wave C), recorded
+per the adopt-or-reverse contract. Revisit triggers are binding: when the
+condition appears in this repo, re-evaluate the row.
+
+### Row 31 — typed claim lifecycle: REVERSED
+
+A governed claim lifecycle (typed claims, four-eyes review, human locks,
+lock-gated exports) requires a review step with an actual reviewer on the
+other side. Current state of this repo: claim-shaped strings exist only as
+Agora consult-token plumbing (`src/app/api/consult/token/route.ts`,
+`src/lib/agora/config.ts`); there is no typed claim object, no review queue,
+no second operator, and no export gate. Adding the lifecycle would produce
+review ceremony with nobody assigned to review.
+
+**Revisit trigger:** a claims-review workflow (human reviewer role or an
+automated review step consuming claim output) becomes part of the product
+flow. At that point adopt the canonical lifecycle rather than a local one —
+see the erp-control-plane implementation for the reference shape.
