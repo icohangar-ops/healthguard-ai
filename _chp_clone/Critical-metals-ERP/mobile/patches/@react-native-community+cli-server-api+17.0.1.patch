@@ -1,0 +1,12 @@
+diff --git a/node_modules/@react-native-community/cli-server-api/build/index.js b/node_modules/@react-native-community/cli-server-api/build/index.js
+index 1111111..2222222 100644
+--- a/node_modules/@react-native-community/cli-server-api/build/index.js
++++ b/node_modules/@react-native-community/cli-server-api/build/index.js
+@@ -40,6 +40,7 @@ function _serveStatic() {
+   return data;
+ }
+ var _indexPageMiddleware = _interopRequireDefault(require("./indexPageMiddleware"));
++exports.indexPageMiddleware = _indexPageMiddleware.default;
+ var _openStackFrameMiddleware = _interopRequireDefault(require("./openStackFrameMiddleware"));
+ var _openURLMiddleware = _interopRequireDefault(require("./openURLMiddleware"));
+ var _rawBodyMiddleware = _interopRequireDefault(require("./rawBodyMiddleware"));

@@ -3,7 +3,7 @@ actian-vectorai>=0.1.0b2
 
 # Embedding model
 sentence-transformers>=5.6.0
-torch>=2.6.0
+torch>=2.13.0
 
 # Bridge HTTP server
 flask>=3.0.0

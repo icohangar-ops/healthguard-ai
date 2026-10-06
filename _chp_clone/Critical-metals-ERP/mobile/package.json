@@ -12,7 +12,8 @@
     "build:ios": "eas build -p ios",
     "build:android": "eas build -p android",
     "submit:ios": "eas submit -p ios",
-    "submit:android": "eas submit -p android"
+    "submit:android": "eas submit -p android",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "expo": "~50.0.0",
@@ -54,10 +55,10 @@
     "@testing-library/react-native": "^12.0.0",
     "react-test-renderer": "18.2.0",
     "eslint": "^8.54.0",
-    "eslint-config-expo": "~7.0.0"
+    "eslint-config-expo": "~7.0.0",
+    "patch-package": "^8.0.1"
   },
   "overrides": {
-    "@react-native-community/cli": "17.0.1",
     "@react-native-community/cli-server-api": "17.0.1"
   },
   "private": true
