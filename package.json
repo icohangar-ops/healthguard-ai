@@ -90,5 +90,9 @@
     "tw-animate-css": "^1.3.5",
     "typescript": "^5",
     "vitest": "^2.1.9"
+  },
+  "overrides": {
+    "lodash": "4.18.1",
+    "tinypool": "2.1.2"
   }
 }

@@ -90,6 +90,7 @@
     "vitest": "^3.2.4"
   },
   "overrides": {
-    "lodash": "https://npm.aikido.io/241fc32efb444a7e76965/lodash@4.17.21-aikido.2"
+    "lodash": "4.18.1",
+    "tinypool": "2.1.2"
   }
 }
